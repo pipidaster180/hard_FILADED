@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prison Flip Jumper Easy</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Игра во весь экран ПК */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #141e30, #243b55);
+        }
+
+        /* Окно создателей, которое ТЕПЕРЬ ПОКАЗЫВАЕТСЯ СРАЗУ */
+        #pcCreditsModal {
+            display: flex; /* Открыто по умолчанию при старте */
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.9);
+            z-index: 200;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Круглое фото */
+        .creator-avatar {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            border: 5px solid #55ff55;
+            box-shadow: 0 0 25px #55ff55;
+            object-fit: cover;
+            background-color: #222;
+            margin-bottom: 25px;
+        }
+
+        /* Текст майнкрафт-воды */
+        .minecraft-water-text {
+            font-size: 32px;
+            font-weight: bold;
+            text-transform: uppercase;
+            text-shadow: 3px 3px #000;
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            letter-spacing: 2px;
+            margin-bottom: 40px;
+        }
+
+        .minecraft-water-text span {
+            display: inline-block;
+            animation: waterWave 2s ease-in-out infinite, waterColor 4s linear infinite;
+        }
+
+        @keyframes waterWave {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-15px); }
+        }
+
+        @keyframes waterColor {
+            0%, 100% { color: #00aaff; }
+            50% { color: #0055ff; }
+            75% { color: #00ffff; }
+        }
+
+        /* Кнопка НАЧАТЬ ИГРУ */
+        #closeModalBtn {
+            padding: 15px 40px;
+            background-color: #55ff55;
+            border: 3px solid #000;
+            box-shadow: inset -3px -3px #22aa22, inset 3px 3px #bbffbb;
+            color: #000;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 22px;
+            cursor: pointer;
+        }
+        #closeModalBtn:active {
+            box-shadow: inset 3px 3px #22aa22, inset -3px -3px #bbffbb;
+        }
+    </style>
+</head>
+<body>
+
+<div id="pcCreditsModal">
+    <img class="creator-avatar" src="kerov_best.png" alt="kerov best" onerror="this.style.background='#55ff55'">
+    <div class="minecraft-water-text" id="waterText">создатели kerov best</div>
+    <button id="closeModalBtn">НАЧАТЬ ИГРУ</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const pcCreditsModal = document.getElementById("pcCreditsModal");
+const closeModalBtn = document.getElementById("closeModalBtn");
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+const playerImg = new Image();
+playerImg.src = 'hero.png'; 
+
+// Анимация текста волной
+const waterTextContainer = document.getElementById('waterText');
+const textStr = waterTextContainer.innerText;
+waterTextContainer.innerHTML = '';
+for (let i = 0; i < textStr.length; i++) {
+    let span = document.createElement('span');
+    span.innerText = textStr[i] === ' ' ? '\u00A0' : textStr[i];
+    span.style.animationDelay = `${i * 0.08}s`;
+    waterTextContainer.appendChild(span);
+}
+
+// Упрощенная физика
+let gravity = 0.35;
+let score = 0;
+let gameOver = false;
+let gameStarted = false;
+let isPaused = true; // С самого начала игра на паузе, пока открыто меню
+
+const player = {
+    x: 200, 
+    y: window.innerHeight / 2,
+    width: 70,  
+    height: 90, 
+    velocity: 0,
+    jumpForce: -8.5,
+    angle: 0,
+    isFlipping: false
+};
+
+let pipes = [];
+const pipeWidth = 100; 
+const pipeGap = 240;   // Сделал проход шире, чтобы играть было ЛЕГЧЕ
+const pipeSpeed = 4.5; // Чуть снизил скорость для удобства
+
+function spawnPipe() {
+    let minHeight = 100;
+    let maxHeight = canvas.height - pipeGap - 150;
+    let height = Math.floor(Math.random() * (maxHeight - minHeight + 1)) + minHeight;
+    
+    pipes.push({
+        x: canvas.width,
+        top: height,
+        bottom: canvas.height - (height + pipeGap),
+        passed: false
+    });
+}
+
+// Клик для прыжка
+function handleAction() {
+    if (isPaused) return; 
+    
+    if (!gameStarted) {
+        gameStarted = true;
+        resetGame();
+        return;
+    }
+    if (gameOver) {
+        resetGame();
+        return;
+    }
+    
+    player.velocity = player.jumpForce;
+    player.isFlipping = true;
+    player.angle = 0; 
+}
+
+window.addEventListener("keydown", (e) => { if (e.code === "Space") handleAction(); });
+canvas.addEventListener("mousedown", handleAction);
+
+// Кнопка закрывает меню и сразу запускает геймплей
+closeModalBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    isPaused = false;
+    pcCreditsModal.style.display = "none";
+    gameStarted = true;
+    resetGame();
+});
+
+function resetGame() {
+    player.y = canvas.height / 2 - 50;
+    player.velocity = 0;
+    player.angle = 0;
+    player.isFlipping = false;
+    pipes = [];
+    score = 0;
+    gameOver = false;
+    spawnPipe();
+}
+
+function update() {
+    if (gameStarted && !gameOver && !isPaused) {
+        player.velocity += gravity;
+        player.y += player.velocity;
+
+        if (player.isFlipping) {
+            player.angle += 0.2;
+            if (player.angle >= Math.PI * 2) {
+                player.angle = 0;
+                player.isFlipping = false;
+            }
+        } else {
+            if (player.velocity > 2) {
+                player.angle = Math.min(player.angle + 0.04, 0.4);
+            }
+        }
+
+        // Если улетел слишком высоко от быстрых кликов — открываем меню создателя
+        if (player.y < -player.height - 20) {
+            gameOver = true;
+            isPaused = true;
+            pcCreditsModal.style.display = "flex";
+        }
+
+        // Упал вниз
+        if (player.y + player.height > canvas.height) {
+            gameOver = true;
+        }
+
+        for (let i = pipes.length - 1; i >= 0; i--) {
+            pipes[i].x -= pipeSpeed;
+
+            if (
+                player.x < pipes[i].x + pipeWidth &&
+                player.x + player.width > pipes[i].x &&
+                (player.y < pipes[i].top || player.y + player.height > canvas.height - pipes[i].bottom)
+            ) {
+                gameOver = true;
+            }
+
+            if (!pipes[i].passed && pipes[i].x + pipeWidth < player.x) {
+                score++;
+                pipes[i].passed = true;
+            }
+
+            if (pipes[i].x + pipeWidth < 0) {
+                pipes.splice(i, 1);
+            }
+        }
+
+        if (pipes.length > 0 && pipes[pipes.length - 1].x < canvas.width - 450) {
+            spawnPipe();
+        }
+    }
+
+    draw();
+    requestAnimationFrame(update);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Трубы
+    pipes.forEach(pipe => {
+        ctx.fillStyle = "#34495e";
+        ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
+        ctx.fillStyle = "#415b76";
+        ctx.fillRect(pipe.x - 6, pipe.top - 25, pipeWidth + 12, 25);
+        
+        ctx.fillStyle = "#34495e";
+        ctx.fillRect(pipe.x, canvas.height - pipe.bottom, pipeWidth, pipe.bottom);
+        ctx.fillStyle = "#415b76";
+        ctx.fillRect(pipe.x - 6, canvas.height - pipe.bottom, pipeWidth + 12, 25);
+    });
+
+    // Игрок
+    ctx.save();
+    ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+    ctx.rotate(player.angle);
+    
+    if (playerImg.complete && playerImg.naturalWidth !== 0) {
+        ctx.drawImage(playerImg, -player.width / 2, -player.height / 2, player.width, player.height);
+    } else {
+        ctx.fillStyle = "#f1c40f";
+        ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
+    }
+    ctx.restore();
+
+    // Счёт
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 50px 'Courier New'";
+    ctx.textBaseline = "top";
+    ctx.textAlign = "center";
+    ctx.fillText(score, canvas.width / 2, 40);
+
+    // Экран смерти (без кнопок)
+    if (gameOver && !isPaused) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#e74c3c";
+        ctx.font = "bold 55px 'Courier New'";
+        ctx.fillText("ИГРА ОКОНЧЕНА", canvas.width / 2, canvas.height / 2 - 100);
+        ctx.fillStyle = "#fff";
+        ctx.font = "26px 'Courier New'";
+        ctx.fillText(`СЧЕТ: ${score}`, canvas.width / 2, canvas.height / 2 - 30);
+        ctx.font = "20px 'Courier New'";
+        ctx.fillText("КЛИКНИ КУДА УГОДНО, ЧТОБЫ ИГРАТЬ СНОВА", canvas.width / 2, canvas.height / 2 + 30);
+    }
+}
+
+update();
+</script>
+
+</body>
+</html>

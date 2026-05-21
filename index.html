@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Prison Flip Jumper</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            background: linear-gradient(to bottom, #2c3e50, #000000);
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            max-width: 100%;
+            max-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// Настройки экрана под мобильный формат (9:16)
+canvas.width = 400;
+canvas.height = 700;
+
+// Загрузка твоего персонажа в формате PNG (с прозрачным фоном)
+const playerImg = new Image();
+playerImg.src = 'hero.png'; 
+
+// Игровые переменные
+let gravity = 0.4;
+let score = 0;
+let gameOver = false;
+let gameStarted = false;
+
+// Объект игрока
+const player = {
+    x: 80,
+    y: 300,
+    width: 55,
+    height: 70,
+    velocity: 0,
+    jumpForce: -7.5,
+    angle: 0, // Угол для анимации флипа
+    isFlipping: false
+};
+
+// Массив препятствий (стен)
+let pipes = [];
+const pipeWidth = 60;
+const pipeGap = 160; 
+const pipeSpeed = 2.5;
+
+function spawnPipe() {
+    let minHeight = 50;
+    let maxHeight = canvas.height - pipeGap - 100;
+    let height = Math.floor(Math.random() * (maxHeight - minHeight + 1)) + minHeight;
+    
+    pipes.push({
+        x: canvas.width,
+        top: height,
+        bottom: canvas.height - (height + pipeGap),
+        passed: false
+    });
+}
+
+// Управление (Клик или Тап)
+function handleAction() {
+    if (!gameStarted) {
+        gameStarted = true;
+        resetGame();
+        return;
+    }
+    if (gameOver) {
+        resetGame();
+        return;
+    }
+    
+    // Прыжок и запуск анимации переворота
+    player.velocity = player.jumpForce;
+    player.isFlipping = true;
+    player.angle = 0; 
+}
+
+window.addEventListener("keydown", (e) => { if (e.code === "Space") handleAction(); });
+window.addEventListener("touchstart", (e) => { e.preventDefault(); handleAction(); }, { passive: false });
+window.addEventListener("mousedown", handleAction);
+
+function resetGame() {
+    player.y = 300;
+    player.velocity = 0;
+    player.angle = 0;
+    player.isFlipping = false;
+    pipes = [];
+    score = 0;
+    gameOver = false;
+    spawnPipe();
+}
+
+// Главный игровой цикл
+function update() {
+    if (gameStarted && !gameOver) {
+        // Физика игрока
+        player.velocity += gravity;
+        player.y += player.velocity;
+
+        // Эффект флипа (крутится при прыжке вверх)
+        if (player.isFlipping) {
+            player.angle += 0.15;
+            if (player.angle >= Math.PI * 2) {
+                player.angle = 0;
+                player.isFlipping = false;
+            }
+        } else {
+            // Плавный наклон вниз при падении
+            if (player.velocity > 2) {
+                player.angle = Math.min(player.angle + 0.05, 0.3);
+            }
+        }
+
+        // Проверка границ экрана
+        if (player.y + player.height > canvas.height || player.y < 0) {
+            gameOver = true;
+        }
+
+        // Движение труб
+        for (let i = pipes.length - 1; i >= 0; i--) {
+            pipes[i].x -= pipeSpeed;
+
+            // Проверка столкновений (Хитбокс)
+            if (
+                player.x < pipes[i].x + pipeWidth &&
+                player.x + player.width > pipes[i].x &&
+                (player.y < pipes[i].top || player.y + player.height > canvas.height - pipes[i].bottom)
+            ) {
+                gameOver = true;
+            }
+
+            // Начисление очков
+            if (!pipes[i].passed && pipes[i].x + pipeWidth < player.x) {
+                score++;
+                pipes[i].passed = true;
+            }
+
+            // Удаление труб вышедших за экран
+            if (pipes[i].x + pipeWidth < 0) {
+                pipes.splice(i, 1);
+            }
+        }
+
+        // Спавн новых труб
+        if (pipes.length > 0 && pipes[pipes.length - 1].x < canvas.width - 220) {
+            spawnPipe();
+        }
+    }
+
+    draw();
+    requestAnimationFrame(update);
+}
+
+// Отрисовка графики
+function draw() {
+    // Очистка экрана
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Рисуем трубы (Решётки / Стены тюрьмы)
+    ctx.fillStyle = "#7f8c8d";
+    pipes.forEach(pipe => {
+        // Верхняя труба
+        ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
+        ctx.fillStyle = "#95a5a6";
+        ctx.fillRect(pipe.x - 2, pipe.top - 15, pipeWidth + 4, 15);
+        
+        // Нижняя труба
+        ctx.fillStyle = "#7f8c8d";
+        ctx.fillRect(pipe.x, canvas.height - pipe.bottom, pipeWidth, pipe.bottom);
+        ctx.fillStyle = "#95a5a6";
+        ctx.fillRect(pipe.x - 2, canvas.height - pipe.bottom, pipeWidth + 4, 15);
+    });
+
+    // Рисуем игрока с вращением (флипом)
+    ctx.save();
+    ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+    ctx.rotate(player.angle);
+    
+    // Отрисовка PNG картинки
+    if (playerImg.complete && playerImg.naturalWidth !== 0) {
+        ctx.drawImage(playerImg, -player.width / 2, -player.height / 2, player.width, player.height);
+    } else {
+        // Запасной вариант, если картинка не загрузилась (жёлтый прямоугольник под цвет костюма)
+        ctx.fillStyle = "#f1c40f";
+        ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
+    }
+    ctx.restore();
+
+    // Интерфейс: Очки
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 30px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.fillText(score, canvas.width / 2, 60);
+
+    // Экраны состояний
+    if (!gameStarted) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "20px 'Courier New'";
+        ctx.fillText("PRISON FLIPPER", canvas.width / 2, canvas.height / 2 - 40);
+        ctx.font = "16px 'Courier New'";
+        ctx.fillText("ТАПНИ ДЛЯ ПРЫЖКА И ФЛИПА", canvas.width / 2, canvas.height / 2 + 10);
+    } else if (gameOver) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#e74c3c";
+        ctx.font = "bold 30px 'Courier New'";
+        ctx.fillText("ИГРА ОКОНЧЕНА", canvas.width / 2, canvas.height / 2 - 30);
+        ctx.fillStyle = "#fff";
+        ctx.font = "16px 'Courier New'";
+        ctx.fillText(`СЧЕТ: ${score}`, canvas.width / 2, canvas.height / 2 + 10);
+        ctx.fillText("ТАПНИ, ЧТОБЫ НАЧАТЬ ЗАНОВО", canvas.width / 2, canvas.height / 2 + 50);
+    }
+}
+
+// Запуск игры
+resetGame();
+update();
+</script>
+
+</body>
+</html>
